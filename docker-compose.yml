@@ -1,0 +1,8 @@
+services:
+  app:
+    build: .
+    container_name: olaf
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: python app.py
