@@ -1,8 +1,14 @@
 services:
-  app:
-    build: .
-    container_name: olaf
+
+  streamlit:
+    build: ./app
     volumes:
-      - .:/app
-    working_dir: /app
-    command: python app.py
+    - ./chroma_db:/app/chroma_db
+    ports:
+      - "8501:8501"
+    environment:
+      - OLLAMA_HOST=http://192.168.55.1:11434
+
+volumes:
+  ollama_data:
+

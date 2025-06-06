@@ -1,0 +1,7 @@
+streamlit
+chromadb
+langchain
+langchain-chroma
+langchain-ollama
+langchain-core
+protobuf~=3.19.0
