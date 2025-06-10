@@ -1,0 +1,22 @@
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# Ignore virtual environment
+.venv/
+env/
+app/venv310
+
+# Ignore VS Code settings
+.vscode/
+
+# Ignore OS-generated files
+.DS_Store
+Thumbs.db
+
+# Ignore log files
+*.log
+
+# Ignore build outputs
+dist/
+build/
