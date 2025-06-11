@@ -8,7 +8,8 @@ services:
       - "8501:8501"
     environment:
       - OLLAMA_HOST=http://192.168.55.1:11434
-
+      - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+      
 volumes:
   ollama_data:
 

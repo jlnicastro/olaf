@@ -60,7 +60,6 @@ def query_llm(prompt, chat_history=None, model_name="gemma:7b"):
 
     retriever = vector_store.as_retriever(search_kwargs={"k": 5})
 
-    # 🧠 Build the conversation history as context
     history_context = "\n".join(
         [f"User: {msg['user']}\nAI: {msg['llm']}" for msg in chat_history]
     )
@@ -75,7 +74,7 @@ def query_llm(prompt, chat_history=None, model_name="gemma:7b"):
 
     Conversation so far:
     {chat_history}
-
+    
     Now, answer this question:
     {input}
     """
@@ -89,7 +88,7 @@ def query_llm(prompt, chat_history=None, model_name="gemma:7b"):
         "chat_history": history_context,
     })
 
-    return output
+    return output['answer']
 
 
 def main():
@@ -104,14 +103,14 @@ def main():
 
     selected_question = None
 
-    # Display recommended questions
-    if st.session_state.recommended:
-        st.subheader("Recommended Questions")
-        selected_question = st.radio(
-            "Pick a suggested question:", 
-            options=st.session_state.recommended,
-            key="question_suggestion"
-        )
+    # # Display recommended questions
+    # if st.session_state.recommended:
+    #     st.subheader("Recommended Questions")
+    #     selected_question = st.radio(
+    #         "Pick a suggested question:", 
+    #         options=st.session_state.recommended,
+    #         key="question_suggestion"
+    #     )
 
     # Capture user input
     if selected_question:
