@@ -21,4 +21,5 @@ Thumbs.db
 dist/
 build/
 
-sqlite-autoconfig-3450100/
+sqlite-autoconf-3450100/
+chroma_db
