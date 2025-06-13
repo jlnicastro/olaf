@@ -20,3 +20,5 @@ Thumbs.db
 # Ignore build outputs
 dist/
 build/
+
+sqlite-autoconfig-3450100/

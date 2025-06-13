@@ -6,6 +6,7 @@ from langchain_chroma import Chroma
 from langchain_core.prompts import PromptTemplate
 import streamlit as st
 import os
+import re
 
 
 # langchain==0.2.17
@@ -16,7 +17,10 @@ import os
 # langchain-text-splitters==0.2.4
 
 
-def generate_suggestions(chat_history, model_name="gemma:7b"):
+def generate_questions(chat_history, model_name="gemma:7b"):
+    if chat_history == []:
+        return []
+    
     ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     llm = OllamaLLM(model=model_name, base_url=ollama_host)
 
@@ -35,8 +39,14 @@ def generate_suggestions(chat_history, model_name="gemma:7b"):
 
     try:
         suggestions = llm.invoke(suggestion_prompt)
-        print("Suggested questions:", suggestions)
-        lines = [line.strip("-• \n") for line in suggestions.splitlines() if line.strip()]
+        lines = []
+        for line in suggestions.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # Remove leading numbers or bullets (e.g., "1. ", "2) ", "- ", etc.)
+            cleaned = re.sub(r"^(\d+[\.\)]\s*|-|\•)\s*", "", line)
+            lines.append(cleaned)
         return lines[:3]  # Return up to 3 suggestions
     except Exception as e:
         print(f"Suggestion generation failed: {e}")
@@ -74,7 +84,7 @@ def query_llm(prompt, chat_history=None, model_name="gemma:7b"):
 
     Conversation so far:
     {chat_history}
-    
+
     Now, answer this question:
     {input}
     """
@@ -98,52 +108,52 @@ def main():
     # Initialize session state
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
-    if "recommended" not in st.session_state:
-        st.session_state.recommended = []
 
-    selected_question = None
+    def set_question(question):
+        st.session_state["my_question"] = question
 
-    # # Display recommended questions
-    # if st.session_state.recommended:
-    #     st.subheader("Recommended Questions")
-    #     selected_question = st.radio(
-    #         "Pick a suggested question:", 
-    #         options=st.session_state.recommended,
-    #         key="question_suggestion"
-    #     )
+    user_input = st.chat_input("Ask a question")
 
-    # Capture user input
-    if selected_question:
-        user_query = st.text_input("Ask a question:", value=selected_question)
+    if st.session_state.get("my_question"):
+        question = st.session_state["my_question"]
+
+        with st.sidebar:
+            st.write("Session State", st.session_state)
+
+        st.session_state["my_question"] = ""
+    elif user_input:
+        question = user_input
     else:
-        user_query = st.text_input("Ask a question:", value="")
+        print("no question", flush=True)
+        question = None
 
     # Only proceed if new question was asked
-    if user_query.strip():
+    if question:
+        user_message = st.chat_message("user")
+        user_message.write(question)
         with st.spinner("Thinking..."):
             try:
-                response = query_llm(user_query, model_name=ollama_model, chat_history=st.session_state.chat_history)
+                response = query_llm(question, model_name=ollama_model, chat_history=st.session_state.chat_history)
+
+                assistant_message = st.chat_message("assistant")
+                assistant_message.write(response)
 
                 st.session_state.chat_history.append({
-                    "user": user_query,
+                    "user": question,
                     "llm": response,
                 })
 
-                st.session_state.recommended = generate_suggestions(
+                followup_questions = generate_questions(
                     st.session_state.chat_history, model_name=ollama_model
                 )
+                if len(followup_questions) > 0:
+                    assistant_message_followup = st.chat_message("assistant")
+                    for question in followup_questions:
+                        assistant_message_followup.button(question, on_click=set_question, args=(question,))
 
             except Exception as e:
                 st.error(f"Error querying model: {e}")
                 st.stop()
-
-    # Display chat history
-    st.header("Chat History")
-    for msg in reversed(st.session_state.chat_history):
-        st.write(f"**User:** {msg['user']}")
-        st.write(f"**LLM:** {msg['llm']}")
-        st.divider()
-
 
 if __name__ == "__main__":
     main()

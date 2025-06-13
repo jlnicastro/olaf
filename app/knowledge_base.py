@@ -14,7 +14,7 @@ import hashlib
 # langchain-text-splitters==0.2.4
 
 def file_hash(path):
-    """Create a simple hash based on path and last modified time."""
+    # Create a simple hash based on path and last modified time
     stat = os.stat(path)
     return hashlib.md5(f"{path}-{stat.st_mtime}".encode()).hexdigest()
 
