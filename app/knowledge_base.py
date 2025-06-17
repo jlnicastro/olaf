@@ -2,6 +2,7 @@ from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 import os
 import hashlib
@@ -37,7 +38,10 @@ def load_new_documents(folder_path, existing_hashes):
     return all_docs
 
 def build_vectorstore(folder_path="docs"):
-    embed = OllamaEmbeddings(model="nomic-embed-text", base_url="http://192.168.55.1:11434")
+    embed = HuggingFaceEmbeddings(
+        model_name="BAAI/bge-base-en-v1.5",
+        encode_kwargs={"normalize_embeddings": True}
+    )
 
     # Load existing vectorstore or create new one
     vector_store = Chroma(
@@ -54,18 +58,21 @@ def build_vectorstore(folder_path="docs"):
         if "file_hash" in metadata
     )
 
-    print(f"[DEBUG] Skipping {len(existing_hashes)} already indexed files...")
+    print(f"[DEBUG] Skipping {len(existing_hashes)} already indexed files...", flush=True)
 
     new_documents = load_new_documents(folder_path, existing_hashes)
 
+    print("1", flush=True)
+
     if new_documents:
+        print("2", flush=True)
         vector_store.add_documents(new_documents)
-        print(f"[DEBUG] Added {len(new_documents)} new documents.")
+        print(f"[DEBUG] Added {len(new_documents)} new documents.", flush=True)
     else:
-        print("[DEBUG] No new documents to add.")
+        print("[DEBUG] No new documents to add.", flush=True)
 
     doc_count = vector_store._collection.count()
-    print(f"[DEBUG] Vector store contains {doc_count} documents.")
+    print(f"[DEBUG] Vector store contains {doc_count} documents.", flush=True)
 
 if __name__ == "__main__":
     build_vectorstore()

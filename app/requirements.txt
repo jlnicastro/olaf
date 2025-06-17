@@ -5,3 +5,6 @@ langchain-chroma
 langchain-ollama
 langchain-core
 langchain-community
+langchain-huggingface
+transformers
+sentence-transformers

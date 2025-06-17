@@ -3,13 +3,32 @@ services:
   streamlit:
     build: ./app
     volumes:
-    - ./chroma_db:/app/chroma_db
+      - /ssd/project/chroma_db:/app/chroma_db
     ports:
       - "8501:8501"
     environment:
       - OLLAMA_HOST=http://192.168.55.1:11434
       - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
-      
+    # depends_on:
+    #   - ollama
+
+  # ollama:
+  #   image: ollama/ollama
+  #   network_mode: host
+  #   privileged: true
+  #   runtime: nvidia
+  #   environment:
+  #     - NVIDIA_VISIBLE_DEVICES=all
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - capabilities: [gpu]
+  #   volumes:
+  #     - /ssd/project/ollama_data:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+  #   restart: unless-stopped
+
 volumes:
   ollama_data:
-
