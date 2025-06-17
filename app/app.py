@@ -32,8 +32,8 @@ vector_store =  Chroma(
     embedding_function=embed,
 )
 
-template = """You are a friendly assistant. Answer the question to the best of your ability.
-If the answer is not directly available from the context, use your best knowledge and reasoning to infer a plausible response.
+template = """You are a friendly assistant, and an expert on Torch Technologies. Answer the questions to the best of your ability.
+Pretend you know all the answers yourself, and do not need any context to find the answers.
 
 Context:
 {context}
@@ -56,7 +56,7 @@ def generate_questions(chat_history):
     prompt = f"""
     You are a helpful assistant.
 
-    Given the following conversation between a user and an AI, suggest 3 short follow-up questions the user might ask next. Keep the suggestions relevant and curious, but simple.
+    Given the following conversation between a user and an AI, suggest 3 short follow-up questions the user might ask next. Keep the questions relevant but simple.
 
     Conversation:
     {history_text}
@@ -97,9 +97,7 @@ def query_llm_stream(prompt, chat_history):
 
 def main():
     st.title("Torch Technologies Chatbot")
-    # st.sidebar.image("favicon-96x96.png", use_container_width=True)
 
-    # Initialize session state
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
@@ -108,49 +106,56 @@ def main():
 
     user_input = st.chat_input("Ask a question")
 
+    # Display all previous messages
+    for msg in st.session_state.chat_history:
+        with st.chat_message("user"):
+            st.markdown(msg["user"])
+        with st.chat_message("assistant"):
+            st.markdown(msg["llm"])
+
+    # Determine current question
     if st.session_state.get("my_question"):
         question = st.session_state["my_question"]
-
         st.session_state["my_question"] = ""
     elif user_input:
         question = user_input
     else:
-        print("no question", flush=True)
         question = None
 
-    # Only proceed if new question was asked
+    # Handle new question
     if question:
-        user_message = st.chat_message("user")
-        user_message.write(question)
-        # st.sidebar.image("thinking.gif", use_container_width=True)
+        with st.chat_message("user"):
+            st.markdown(question)
 
         try:
-            assistant_message = st.chat_message("assistant")
-            msg_placeholder = assistant_message.empty()
-            full_response = ""
+            with st.chat_message("assistant"):
+                msg_placeholder = st.empty()
+                full_response = ""
 
-            for chunk in query_llm_stream(question, chat_history=st.session_state.chat_history):
-                full_response += chunk
-                msg_placeholder.markdown(full_response + "▌")
+                for chunk in query_llm_stream(question, chat_history=st.session_state.chat_history):
+                    full_response += chunk
+                    msg_placeholder.markdown(full_response + "▌")
 
-            msg_placeholder.markdown(full_response)
+                msg_placeholder.markdown(full_response)
 
+            # Save to history
             st.session_state.chat_history.append({
                 "user": question,
                 "llm": full_response,
             })
 
-            followup_questions = generate_questions(
-                st.session_state.chat_history
-            )
-            if len(followup_questions) > 0:
-                assistant_message_followup = st.chat_message("assistant")
-                for question in followup_questions:
-                    assistant_message_followup.button(question, on_click=set_question, args=(question,))
+            # Suggest follow-up questions
+            followup_questions = generate_questions(st.session_state.chat_history)
+            if followup_questions:
+                with st.chat_message("assistant"):
+                    followup_container = st.container()
+                    for q in followup_questions:
+                        if followup_container.button(q, on_click=set_question, args=(q,)):
+                            followup_container.empty()
+                            break
 
         except Exception as e:
             st.error(f"Error querying model: {e}")
-            st.stop()
 
 if __name__ == "__main__":
     main()
