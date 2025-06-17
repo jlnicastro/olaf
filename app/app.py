@@ -17,34 +17,40 @@ import re
 # langchain-text-splitters==0.2.4
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-MODEL_NAME = "llama3:8b"
+OLLAMA_MODEL = "llama3:8b"
 EMBED_MODEL = "BAAI/bge-base-en-v1.5"
 
-llm =  OllamaLLM(model=MODEL_NAME, base_url=OLLAMA_HOST, streaming=True)
+@st.cache_resource
+def get_llm():
+    return OllamaLLM(model=OLLAMA_MODEL, base_url=OLLAMA_HOST, streaming=True)
 
-embed = HuggingFaceEmbeddings(
-    model_name=EMBED_MODEL,
-    encode_kwargs={"normalize_embeddings": True}
-)
-vector_store =  Chroma(
-    collection_name="my_collection",
-    persist_directory="chroma_db",
-    embedding_function=embed,
-)
+@st.cache_resource
+def get_vector_store():
+    embed = HuggingFaceEmbeddings(
+        model_name=EMBED_MODEL,
+        encode_kwargs={"normalize_embeddings": True}
+    )
+    return Chroma(
+        collection_name="my_collection",
+        persist_directory="chroma_db",
+        embedding_function=embed,
+    )
 
-template = """You are a friendly assistant, and an expert on Torch Technologies. Answer the questions to the best of your ability.
-Pretend you know all the answers yourself, and do not need any context to find the answers.
+@st.cache_resource
+def get_prompt_template():
+    template = """You are a friendly assistant, and an expert on Torch Technologies. Answer the questions to the best of your ability.
+    Pretend you know all the answers yourself, and do not need any context to find the answers.
 
-Context:
-{context}
+    Context:
+    {context}
 
-Conversation so far:
-{chat_history}
+    Conversation so far:
+    {chat_history}
 
-Now, answer this question:
-{input}
-"""
-prompt_template =  PromptTemplate.from_template(template)
+    Now, answer this question:
+    {input}
+    """
+    return PromptTemplate.from_template(template)
 
 
 def generate_questions(chat_history):
@@ -65,6 +71,7 @@ def generate_questions(chat_history):
     """
 
     try:
+        llm = get_llm()
         response = llm.invoke(prompt)
         print(response, flush=True)
         questions = re.findall(r"^\s*\d\.\s+(.*)", response, re.MULTILINE)
@@ -79,6 +86,9 @@ def query_llm_stream(prompt, chat_history):
     history_context = "\n".join(
         [f"User: {msg['user']}\nAI: {msg['llm']}" for msg in chat_history]
     )
+    llm = get_llm()
+    vector_store = get_vector_store()
+    prompt_template = get_prompt_template()
     retriever = vector_store.as_retriever(search_kwargs={"k": 5})
 
     results = retriever.get_relevant_documents(prompt)
