@@ -19,10 +19,17 @@ import re
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = "llama3:8b"
 EMBED_MODEL = "BAAI/bge-base-en-v1.5"
+FOLLOWUP_MODEL = "mistral"
 
 @st.cache_resource
 def get_llm():
     return OllamaLLM(model=OLLAMA_MODEL, base_url=OLLAMA_HOST, streaming=True)
+
+
+@st.cache_resource
+def get_fast_llm():
+    return OllamaLLM(model=FOLLOWUP_MODEL, base_url=OLLAMA_HOST, temperature=0.7)
+
 
 @st.cache_resource
 def get_vector_store():
@@ -38,8 +45,8 @@ def get_vector_store():
 
 @st.cache_resource
 def get_prompt_template():
-    template = """You are a friendly assistant, and an expert on Torch Technologies. Answer the questions to the best of your ability.
-    Pretend you know all the answers yourself, and do not need any context to find the answers.
+    template = """You are an expert on Torch Technologies. Answer the questions to the best of your ability.
+    Do not say what your answer is based on.
 
     Context:
     {context}
@@ -53,25 +60,19 @@ def get_prompt_template():
     return PromptTemplate.from_template(template)
 
 
-def generate_questions(chat_history):
-    if chat_history == []:
+def generate_questions(previous_response):
+    if not previous_response:
         return []
 
-    history_text = "\n".join(f"User: {m['user']}\nAI: {m['llm']}" for m in chat_history[-3:])  # Last 3 turns
-
     prompt = f"""
-    You are a helpful assistant.
+    Suggest 3 short and simple follow-up questions based on this information. Do not provide the answers.
 
-    Given the following conversation between a user and an AI, suggest 3 short follow-up questions the user might ask next. Keep the questions relevant but simple.
-
-    Conversation:
-    {history_text}
-
-    Suggestions:
+    Information:
+    {previous_response}
     """
 
     try:
-        llm = get_llm()
+        llm = get_fast_llm()
         response = llm.invoke(prompt)
         print(response, flush=True)
         questions = re.findall(r"^\s*\d\.\s+(.*)", response, re.MULTILINE)
@@ -82,14 +83,13 @@ def generate_questions(chat_history):
         return []
 
 
-def query_llm_stream(prompt, chat_history):
-    history_context = "\n".join(
-        [f"User: {msg['user']}\nAI: {msg['llm']}" for msg in chat_history]
-    )
+def query_llm(vector_store, prompt, history_context):
     llm = get_llm()
-    vector_store = get_vector_store()
     prompt_template = get_prompt_template()
-    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+    retriever = vector_store.as_retriever(
+        search_type = "mmr",
+        search_kwargs={"k": 10, "fetch_k": 20}
+    )
 
     results = retriever.get_relevant_documents(prompt)
     for doc in results:
@@ -107,6 +107,8 @@ def query_llm_stream(prompt, chat_history):
 
 def main():
     st.title("Torch Technologies Chatbot")
+
+    vector_store = get_vector_store()
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -132,6 +134,21 @@ def main():
     else:
         question = None
 
+    # Display starter questions
+    if not question:
+        starter_questions = [
+            "What is Torch Technologies?",
+            "Who are Torch Technologies' major clients?",
+            "What kind of projects does Torch Technologies work on?"
+        ]
+
+        with st.chat_message("assistant"):
+            starter_container = st.container()
+            for q in starter_questions:
+                if starter_container.button(q, on_click=set_question, args=(q,)):
+                    starter_container.empty()
+                    break
+
     # Handle new question
     if question:
         with st.chat_message("user"):
@@ -142,7 +159,11 @@ def main():
                 msg_placeholder = st.empty()
                 full_response = ""
 
-                for chunk in query_llm_stream(question, chat_history=st.session_state.chat_history):
+                history_context = "\n".join(
+                    [f"User: {msg['user']}\nAI: {msg['llm']}" for msg in st.session_state.chat_history[-3:]]
+                )
+
+                for chunk in query_llm(vector_store, question, history_context):
                     full_response += chunk
                     msg_placeholder.markdown(full_response + "▌")
 
@@ -155,7 +176,7 @@ def main():
             })
 
             # Suggest follow-up questions
-            followup_questions = generate_questions(st.session_state.chat_history)
+            followup_questions = generate_questions(full_response)
             if followup_questions:
                 with st.chat_message("assistant"):
                     followup_container = st.container()
