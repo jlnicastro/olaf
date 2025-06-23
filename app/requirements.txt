@@ -6,5 +6,7 @@ langchain-ollama
 langchain-core
 langchain-community
 langchain-huggingface
-transformers
 sentence-transformers
+faster-whisper
+gtts
+pyttsx3
