@@ -1,4 +1,4 @@
-from langchain_ollama import OllamaLLM, OllamaEmbeddings
+from langchain_ollama import OllamaLLM
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from langchain_chroma import Chroma
@@ -7,7 +7,13 @@ from langchain_huggingface import HuggingFaceEmbeddings
 import streamlit as st
 import os
 import re
-
+from faster_whisper import WhisperModel
+from tempfile import NamedTemporaryFile
+from gtts import gTTS
+import base64
+import time
+import io
+import pyttsx3
 
 # langchain==0.2.17
 # langchain-cli==0.0.30
@@ -17,7 +23,7 @@ import re
 # langchain-text-splitters==0.2.4
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = "llama3:8b"
+OLLAMA_MODEL = "mistral"
 EMBED_MODEL = "BAAI/bge-base-en-v1.5"
 FOLLOWUP_MODEL = "mistral"
 
@@ -45,7 +51,7 @@ def get_vector_store():
 
 @st.cache_resource
 def get_prompt_template():
-    template = """You are an expert on Torch Technologies. Answer the questions to the best of your ability.
+    template = """You are an expert on Torch Technologies. Answer any questions thoroughly.
     Do not say what your answer is based on.
 
     Context:
@@ -60,13 +66,62 @@ def get_prompt_template():
     return PromptTemplate.from_template(template)
 
 
+@st.cache_resource
+def load_whisper_model():
+    return WhisperModel("small", compute_type="int8")
+
+def transcribe_audio(audio_bytes):
+    if not audio_bytes or len(audio_bytes) < 1000:
+        print("Audio too short or empty", flush=True)
+        return None
+
+    with NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+        temp_audio.write(audio_bytes)
+        temp_audio.flush()
+
+        try:
+            segments, _ = load_whisper_model().transcribe(
+                temp_audio.name,
+                language="en",
+                beam_size=1
+            )
+            return " ".join([seg.text for seg in segments])
+        except Exception as e:
+            print(f"Whisper transcription error: {e}", flush=True)
+            return None
+        
+
+def text_to_audio_bytes(text, rate=200):
+    engine = pyttsx3.init()
+    engine.setProperty('rate', rate)
+
+    with NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
+        filename = tmpfile.name
+
+    engine.save_to_file(text, filename)
+    engine.runAndWait()
+
+    # Wait briefly to ensure file is fully written
+    time.sleep(0.1)
+
+    with open(filename, "rb") as f:
+        audio_bytes = f.read()
+
+    # Clean up the temp file
+    os.remove(filename)
+
+    return audio_bytes
+
+
 def generate_questions(previous_response):
     if not previous_response:
         return []
 
     prompt = f"""
-    Suggest 3 short and simple follow-up questions based on this information. Do not provide the answers.
-
+    Suggest 3 short and simple follow-up questions based on this information.
+    Do not provide the answers, and make sure the question was not already answered.
+    Keep the follow-up questions relevant to Torch Technologies.
+    
     Information:
     {previous_response}
     """
@@ -79,7 +134,7 @@ def generate_questions(previous_response):
         return questions
 
     except Exception as e:
-        print(f"Error generating questions: {e}")
+        print(f"Error generating questions: {e}", flush=True)
         return []
 
 
@@ -106,7 +161,11 @@ def query_llm(vector_store, prompt, history_context):
 
 
 def main():
+    # with st.sidebar:
+    #     st.write(dict(st.session_state))
+
     st.title("Torch Technologies Chatbot")
+    # st.sidebar.image("FireSpiritsCard.webp", use_container_width=True)
 
     vector_store = get_vector_store()
 
@@ -116,7 +175,7 @@ def main():
     def set_question(question):
         st.session_state["my_question"] = question
 
-    user_input = st.chat_input("Ask a question")
+    chat_input = st.chat_input("Ask a question")
 
     # Display all previous messages
     for msg in st.session_state.chat_history:
@@ -129,8 +188,11 @@ def main():
     if st.session_state.get("my_question"):
         question = st.session_state["my_question"]
         st.session_state["my_question"] = ""
-    elif user_input:
-        question = user_input
+    elif chat_input:
+        question = chat_input
+    elif st.session_state.get("audio_input"):
+        question = st.session_state["audio_input"]
+        st.session_state["audio_input"] = ""
     else:
         question = None
 
@@ -161,11 +223,21 @@ def main():
 
                 history_context = "\n".join(
                     [f"User: {msg['user']}\nAI: {msg['llm']}" for msg in st.session_state.chat_history[-3:]]
-                )
+                ) 
 
                 for chunk in query_llm(vector_store, question, history_context):
                     full_response += chunk
                     msg_placeholder.markdown(full_response + "▌")
+
+                audio_bytes = text_to_audio_bytes(full_response, rate=200)  # faster voice
+                b64 = base64.b64encode(audio_bytes).decode()
+
+                # Autoplay using HTML
+                st.markdown(f"""
+                <audio autoplay>
+                    <source src="data:audio/wav;base64,{b64}" type="audio/wav">
+                </audio>
+                """, unsafe_allow_html=True)
 
                 msg_placeholder.markdown(full_response)
 
@@ -187,6 +259,18 @@ def main():
 
         except Exception as e:
             st.error(f"Error querying model: {e}")
+
+    audio_input = st.audio_input("Or record a voice question")
+
+    if audio_input:
+        transcribed = transcribe_audio(audio_input.getvalue())
+        st.session_state["audio_input"] = transcribed
+
+        with st.sidebar:
+            st.write(dict(st.session_state))
+
+        st.rerun()
+
 
 if __name__ == "__main__":
     main()
