@@ -2,16 +2,21 @@ FROM ghcr.io/astral-sh/uv:python3.10-bookworm-slim
 
 WORKDIR /app
 
-# Install dependencies including espeak
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    espeak
+    espeak \
+    alsa-utils \
+    wget \
+    curl \
+    tar \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python packages
+# Install Python dependencies (including piper-tts)
 COPY requirements.txt .
 RUN uv pip install -r requirements.txt --system
 
-# Copy your app code
+# Copy app code
 COPY . .
 
 EXPOSE 8501

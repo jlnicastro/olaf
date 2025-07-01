@@ -8,5 +8,6 @@ langchain-community
 langchain-huggingface
 sentence-transformers
 faster-whisper
-gtts
-pyttsx3
+openai
+kokoro
+soundfile

@@ -9,11 +9,12 @@ import os
 import re
 from faster_whisper import WhisperModel
 from tempfile import NamedTemporaryFile
-from gtts import gTTS
-import base64
-import time
+from kokoro import KPipeline
+import soundfile as sf
 import io
-import pyttsx3
+import base64
+import numpy as np
+
 
 # langchain==0.2.17
 # langchain-cli==0.0.30
@@ -49,6 +50,7 @@ def get_vector_store():
         embedding_function=embed,
     )
 
+
 @st.cache_resource
 def get_prompt_template():
     template = """You are an expert on Torch Technologies. Answer any questions thoroughly.
@@ -70,47 +72,46 @@ def get_prompt_template():
 def load_whisper_model():
     return WhisperModel("small", compute_type="int8")
 
-def transcribe_audio(audio_bytes):
-    if not audio_bytes or len(audio_bytes) < 1000:
-        print("Audio too short or empty", flush=True)
-        return None
 
+@st.cache_resource
+def get_kokoro_pipeline():
+    return KPipeline(lang_code="a")
+
+
+def transcribe_audio():
+    audio_bytes = st.session_state["uploaded_audio"].getvalue()
     with NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
         temp_audio.write(audio_bytes)
         temp_audio.flush()
 
-        try:
-            segments, _ = load_whisper_model().transcribe(
-                temp_audio.name,
-                language="en",
-                beam_size=1
-            )
-            return " ".join([seg.text for seg in segments])
-        except Exception as e:
-            print(f"Whisper transcription error: {e}", flush=True)
-            return None
-        
+        segments, _ = load_whisper_model().transcribe(
+            temp_audio.name,
+            language="en",
+            beam_size=1
+        )
 
-def text_to_audio_bytes(text, rate=200):
-    engine = pyttsx3.init()
-    engine.setProperty('rate', rate)
+        transcription = " ".join([seg.text for seg in segments])
+        st.session_state["audio_input"] = transcription
 
-    with NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
-        filename = tmpfile.name
 
-    engine.save_to_file(text, filename)
-    engine.runAndWait()
+def kokoro_generate(text, voice='af_heart'):
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", errors="ignore")
 
-    # Wait briefly to ensure file is fully written
-    time.sleep(0.1)
+    pipeline = get_kokoro_pipeline()
+    generator = pipeline(text, voice=voice)
 
-    with open(filename, "rb") as f:
-        audio_bytes = f.read()
+    all_audio = []
+    for gs, ps, audio in generator:
+        all_audio.append(audio)
 
-    # Clean up the temp file
-    os.remove(filename)
+    # Concatenate the audio arrays BEFORE saving to WAV:
+    full_audio = np.concatenate(all_audio)
 
-    return audio_bytes
+    wav_io = io.BytesIO()
+    sf.write(wav_io, full_audio, 24000, format="WAV")
+    wav_io.seek(0)
+    return wav_io.read()
 
 
 def generate_questions(previous_response):
@@ -118,9 +119,9 @@ def generate_questions(previous_response):
         return []
 
     prompt = f"""
-    Suggest 3 short and simple follow-up questions based on this information.
-    Do not provide the answers, and make sure the question was not already answered.
-    Keep the follow-up questions relevant to Torch Technologies.
+    Suggest 3 short and quick follow-up questions based on this information.
+    Make sure the question was not already answered, and do not provide the answer yourself.
+    Keep the follow-up questions short but relevant to Torch Technologies.
     
     Information:
     {previous_response}
@@ -168,6 +169,7 @@ def main():
     # st.sidebar.image("FireSpiritsCard.webp", use_container_width=True)
 
     vector_store = get_vector_store()
+    get_kokoro_pipeline()
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -191,8 +193,7 @@ def main():
     elif chat_input:
         question = chat_input
     elif st.session_state.get("audio_input"):
-        question = st.session_state["audio_input"]
-        st.session_state["audio_input"] = ""
+        question = st.session_state.pop("audio_input")
     else:
         question = None
 
@@ -223,23 +224,28 @@ def main():
 
                 history_context = "\n".join(
                     [f"User: {msg['user']}\nAI: {msg['llm']}" for msg in st.session_state.chat_history[-3:]]
-                ) 
+                )
 
+                # Collect full response
                 for chunk in query_llm(vector_store, question, history_context):
                     full_response += chunk
                     msg_placeholder.markdown(full_response + "▌")
 
-                audio_bytes = text_to_audio_bytes(full_response, rate=200)  # faster voice
-                b64 = base64.b64encode(audio_bytes).decode()
-
-                # Autoplay using HTML
-                st.markdown(f"""
-                <audio autoplay>
-                    <source src="data:audio/wav;base64,{b64}" type="audio/wav">
-                </audio>
-                """, unsafe_allow_html=True)
-
                 msg_placeholder.markdown(full_response)
+
+                final_audio_bytes = kokoro_generate(full_response)
+
+                # Encode to base64
+                b64_audio = base64.b64encode(final_audio_bytes).decode('utf-8')
+
+                # Play the audio
+                audio_html = f"""
+                <audio autoplay>
+                    <source src="data:audio/wav;base64,{b64_audio}" type="audio/wav">
+                    Your browser does not support the audio element.
+                </audio>
+                """
+                st.markdown(audio_html, unsafe_allow_html=True)
 
             # Save to history
             st.session_state.chat_history.append({
@@ -260,16 +266,11 @@ def main():
         except Exception as e:
             st.error(f"Error querying model: {e}")
 
-    audio_input = st.audio_input("Or record a voice question")
-
-    if audio_input:
-        transcribed = transcribe_audio(audio_input.getvalue())
-        st.session_state["audio_input"] = transcribed
-
-        with st.sidebar:
-            st.write(dict(st.session_state))
-
-        st.rerun()
+    st.audio_input(
+        "Or record a voice question",
+        key="uploaded_audio",
+        on_change=transcribe_audio
+    )
 
 
 if __name__ == "__main__":
