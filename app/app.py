@@ -16,12 +16,14 @@ import base64
 import numpy as np
 
 
-# langchain==0.2.17
-# langchain-cli==0.0.30
-# langchain-community==0.2.19
-# langchain-core==0.2.43
-# langchain-ollama==0.1.3
-# langchain-text-splitters==0.2.4
+# langchain                              0.3.26
+# langchain-chroma                       0.2.4
+# langchain-community                    0.3.26
+# langchain-core                         0.3.67
+# langchain-huggingface                  0.3.0
+# langchain-ollama                       0.3.3
+# langchain-text-splitters               0.3.8
+
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = "mistral"
@@ -121,7 +123,7 @@ def generate_questions(previous_response):
     prompt = f"""
     Suggest 3 short and quick follow-up questions based on this information.
     Make sure the question was not already answered, and do not provide the answer yourself.
-    Keep the follow-up questions short but relevant to Torch Technologies.
+    Keep the follow-up questions short.
     
     Information:
     {previous_response}
@@ -162,11 +164,7 @@ def query_llm(vector_store, prompt, history_context):
 
 
 def main():
-    # with st.sidebar:
-    #     st.write(dict(st.session_state))
-
     st.title("Torch Technologies Chatbot")
-    # st.sidebar.image("FireSpiritsCard.webp", use_container_width=True)
 
     vector_store = get_vector_store()
     get_kokoro_pipeline()
@@ -234,11 +232,8 @@ def main():
                 msg_placeholder.markdown(full_response)
 
                 final_audio_bytes = kokoro_generate(full_response)
-
-                # Encode to base64
                 b64_audio = base64.b64encode(final_audio_bytes).decode('utf-8')
 
-                # Play the audio
                 audio_html = f"""
                 <audio autoplay>
                     <source src="data:audio/wav;base64,{b64_audio}" type="audio/wav">

@@ -7,12 +7,15 @@ from langchain_core.documents import Document
 import os
 import hashlib
 
-# langchain==0.2.17
-# langchain-cli==0.0.30
-# langchain-community==0.2.19
-# langchain-core==0.2.43
-# langchain-ollama==0.1.3
-# langchain-text-splitters==0.2.4
+
+# langchain                              0.3.26
+# langchain-chroma                       0.2.4
+# langchain-community                    0.3.26
+# langchain-core                         0.3.67
+# langchain-huggingface                  0.3.0
+# langchain-ollama                       0.3.3
+# langchain-text-splitters               0.3.8
+
 
 def file_hash(path):
     # Create a simple hash based on path and last modified time
