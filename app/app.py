@@ -162,111 +162,103 @@ def query_llm(vector_store, prompt, history_context):
     }):
         yield chunk.get("answer", "")
 
+######################################
 
-def main():
-    st.title("Torch Technologies Chatbot")
+st.title("Torch Technologies Chatbot")
 
-    vector_store = get_vector_store()
-    get_kokoro_pipeline()
+vector_store = get_vector_store()
+get_kokoro_pipeline()
 
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-    def set_question(question):
-        st.session_state["my_question"] = question
+def set_question(question):
+    st.session_state["my_question"] = question
 
-    chat_input = st.chat_input("Ask a question")
+chat_input = st.chat_input("Ask a question")
 
-    # Display all previous messages
-    for msg in st.session_state.chat_history:
-        with st.chat_message("user"):
-            st.markdown(msg["user"])
+# Display all previous messages
+for msg in st.session_state.chat_history:
+    with st.chat_message("user"):
+        st.markdown(msg["user"])
+    with st.chat_message("assistant"):
+        st.markdown(msg["llm"])
+
+# Determine current question
+if st.session_state.get("my_question"):
+    question = st.session_state["my_question"]
+    st.session_state["my_question"] = ""
+elif chat_input:
+    question = chat_input
+elif st.session_state.get("audio_input"):
+    question = st.session_state.pop("audio_input")
+else:
+    question = None
+
+# Display starter questions
+if not question:
+    starter_questions = [
+        "What is Torch Technologies?",
+        "Who are Torch Technologies' major clients?",
+        "What kind of projects does Torch Technologies work on?"
+    ]
+
+    with st.chat_message("assistant"):
+        starter_container = st.container()
+        for q in starter_questions:
+            if starter_container.button(q, on_click=set_question, args=(q,)):
+                starter_container.empty()
+                break
+
+# Handle new question
+if question:
+    with st.chat_message("user"):
+        st.markdown(question)
+
+    with st.chat_message("assistant"):
+        msg_placeholder = st.empty()
+        full_response = ""
+
+        history_context = "\n".join(
+            [f"User: {msg['user']}\nAI: {msg['llm']}" for msg in st.session_state.chat_history[-3:]]
+        )
+
+        # Collect full response
+        for chunk in query_llm(vector_store, question, history_context):
+            full_response += chunk
+            msg_placeholder.markdown(full_response + "▌")
+
+        msg_placeholder.markdown(full_response)
+
+        final_audio_bytes = kokoro_generate(full_response)
+        b64_audio = base64.b64encode(final_audio_bytes).decode('utf-8')
+
+        audio_html = f"""
+        <audio autoplay>
+            <source src="data:audio/wav;base64,{b64_audio}" type="audio/wav">
+            Your browser does not support the audio element.
+        </audio>
+        """
+        st.markdown(audio_html, unsafe_allow_html=True)
+
+    # Save to history
+    st.session_state.chat_history.append({
+        "user": question,
+        "llm": full_response,
+    })
+
+    # Suggest follow-up questions
+    followup_questions = generate_questions(full_response)
+    if followup_questions:
         with st.chat_message("assistant"):
-            st.markdown(msg["llm"])
-
-    # Determine current question
-    if st.session_state.get("my_question"):
-        question = st.session_state["my_question"]
-        st.session_state["my_question"] = ""
-    elif chat_input:
-        question = chat_input
-    elif st.session_state.get("audio_input"):
-        question = st.session_state.pop("audio_input")
-    else:
-        question = None
-
-    # Display starter questions
-    if not question:
-        starter_questions = [
-            "What is Torch Technologies?",
-            "Who are Torch Technologies' major clients?",
-            "What kind of projects does Torch Technologies work on?"
-        ]
-
-        with st.chat_message("assistant"):
-            starter_container = st.container()
-            for q in starter_questions:
-                if starter_container.button(q, on_click=set_question, args=(q,)):
-                    starter_container.empty()
+            followup_container = st.container()
+            for q in followup_questions:
+                if followup_container.button(q, on_click=set_question, args=(q,)):
+                    followup_container.empty()
                     break
 
-    # Handle new question
-    if question:
-        with st.chat_message("user"):
-            st.markdown(question)
-
-        try:
-            with st.chat_message("assistant"):
-                msg_placeholder = st.empty()
-                full_response = ""
-
-                history_context = "\n".join(
-                    [f"User: {msg['user']}\nAI: {msg['llm']}" for msg in st.session_state.chat_history[-3:]]
-                )
-
-                # Collect full response
-                for chunk in query_llm(vector_store, question, history_context):
-                    full_response += chunk
-                    msg_placeholder.markdown(full_response + "▌")
-
-                msg_placeholder.markdown(full_response)
-
-                final_audio_bytes = kokoro_generate(full_response)
-                b64_audio = base64.b64encode(final_audio_bytes).decode('utf-8')
-
-                audio_html = f"""
-                <audio autoplay>
-                    <source src="data:audio/wav;base64,{b64_audio}" type="audio/wav">
-                    Your browser does not support the audio element.
-                </audio>
-                """
-                st.markdown(audio_html, unsafe_allow_html=True)
-
-            # Save to history
-            st.session_state.chat_history.append({
-                "user": question,
-                "llm": full_response,
-            })
-
-            # Suggest follow-up questions
-            followup_questions = generate_questions(full_response)
-            if followup_questions:
-                with st.chat_message("assistant"):
-                    followup_container = st.container()
-                    for q in followup_questions:
-                        if followup_container.button(q, on_click=set_question, args=(q,)):
-                            followup_container.empty()
-                            break
-
-        except Exception as e:
-            st.error(f"Error querying model: {e}")
-
-    st.audio_input(
-        "Or record a voice question",
-        key="uploaded_audio",
-        on_change=transcribe_audio
-    )
-
-
-if __name__ == "__main__":
-    main()
+st.audio_input(
+    "Or record a voice question",
+    key="uploaded_audio",
+    on_change=transcribe_audio
+)
