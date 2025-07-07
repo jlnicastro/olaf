@@ -67,5 +67,5 @@ for url in all_links:
     all_text += f"\n\n--- Page: {url} ---\n\n{page_text}"
     time.sleep(1)
 
-with open("torch_website_data.txt", "w", encoding="utf-8") as f:
+with open("torch_data.txt", "w", encoding="utf-8") as f:
     f.write(all_text)
