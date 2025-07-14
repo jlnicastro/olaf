@@ -30,13 +30,20 @@ def load_new_documents(folder_path, existing_hashes):
             fhash = file_hash(filepath)
             if fhash in existing_hashes:
                 continue  # skip already processed file
+
             loader = TextLoader(filepath)
             docs = loader.load()
-            splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=50
+            )
+
             split_docs = splitter.split_documents(docs)
+
             # Add metadata with the hash so we can check it next time
             for doc in split_docs:
                 doc.metadata["file_hash"] = fhash
+                doc.metadata["filename"] = filename
             all_docs.extend(split_docs)
     return all_docs
 
@@ -76,6 +83,18 @@ def build_vectorstore(folder_path="docs"):
 
     doc_count = vector_store._collection.count()
     print(f"[DEBUG] Vector store contains {doc_count} documents.", flush=True)
+
+    all_docs = vector_store.get(include=["metadatas"])
+
+    filenames = set(
+        meta.get("filename", "UNKNOWN")
+        for meta in all_docs["metadatas"]
+        if "filename" in meta
+    )
+
+    print("Files in vector store:", flush=True)
+    for name in filenames:
+        print("-", name, flush=True)
 
 if __name__ == "__main__":
     build_vectorstore()

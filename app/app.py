@@ -14,6 +14,7 @@ import soundfile as sf
 import io
 import base64
 import numpy as np
+import hashlib
 
 
 # langchain                              0.3.26
@@ -96,10 +97,22 @@ def transcribe_audio():
         st.session_state["audio_input"] = transcription
 
 
+
 def kokoro_generate(text, voice='af_heart'):
     if isinstance(text, bytes):
         text = text.decode("utf-8", errors="ignore")
 
+    # Use a simple hash of the text + voice as the cache key
+    key = hashlib.sha256((text + voice).encode()).hexdigest()
+
+    if "tts_cache" not in st.session_state:
+        st.session_state.tts_cache = {}
+
+    # Return cached audio if available
+    if key in st.session_state.tts_cache:
+        return st.session_state.tts_cache[key]
+
+    # Otherwise, generate new audio
     pipeline = get_kokoro_pipeline()
     generator = pipeline(text, voice=voice)
 
@@ -107,13 +120,17 @@ def kokoro_generate(text, voice='af_heart'):
     for gs, ps, audio in generator:
         all_audio.append(audio)
 
-    # Concatenate the audio arrays BEFORE saving to WAV:
     full_audio = np.concatenate(all_audio)
 
     wav_io = io.BytesIO()
     sf.write(wav_io, full_audio, 24000, format="WAV")
     wav_io.seek(0)
-    return wav_io.read()
+    audio_bytes = wav_io.read()
+
+    # Cache the result
+    st.session_state.tts_cache[key] = audio_bytes
+
+    return audio_bytes
 
 
 def generate_questions(previous_response):
@@ -121,10 +138,11 @@ def generate_questions(previous_response):
         return []
 
     prompt = f"""
-    Suggest 3 short and quick follow-up questions based on this information.
-    Make sure the question was not already answered, and do not provide the answer yourself.
-    Keep the follow-up questions short.
-    
+    Based on the information below, suggest 3 short follow-up questions that someone knew to Torch Technologies might ask.
+    Each question should be just one clause (no commas, conjunctions, or multi-part sentences).
+    Avoid repeating anything already answered. Do not include the answers.
+    Keep the follow-up questions relevant to Torch Technologies.
+
     Information:
     {previous_response}
     """
@@ -133,7 +151,7 @@ def generate_questions(previous_response):
         llm = get_fast_llm()
         response = llm.invoke(prompt)
         print(response, flush=True)
-        questions = re.findall(r"^\s*\d\.\s+(.*)", response, re.MULTILINE)
+        questions = re.findall(r"^\s*\d\.\s+['\"]?(.*?)['\"]?\s*$", response, re.MULTILINE)
         return questions
 
     except Exception as e:
@@ -162,9 +180,32 @@ def query_llm(vector_store, prompt, history_context):
     }):
         yield chunk.get("answer", "")
 
+
+def get_cached_response(question, history_context):
+    # Create a unique hash key for question + context
+    key = hashlib.sha256((question).encode()).hexdigest()
+
+    if "llm_cache" not in st.session_state:
+        st.session_state.llm_cache = {}
+
+    # Return cached if exists
+    if key in st.session_state.llm_cache:
+        return st.session_state.llm_cache[key]
+
+    # If not cached, run LLM and save result
+    response = ""
+    for chunk in query_llm(vector_store, question, history_context):
+        response += chunk
+
+    st.session_state.llm_cache[key] = response
+    return response
+
 ######################################
 
 st.title("Torch Technologies Chatbot")
+
+st.sidebar.title("Settings")
+use_tts = st.sidebar.checkbox("Enable Kokoro TTS", value=True)
 
 vector_store = get_vector_store()
 get_kokoro_pipeline()
@@ -181,7 +222,7 @@ chat_input = st.chat_input("Ask a question")
 for msg in st.session_state.chat_history:
     with st.chat_message("user"):
         st.markdown(msg["user"])
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar='favicon-96x96.png'):
         st.markdown(msg["llm"])
 
 # Determine current question
@@ -203,7 +244,7 @@ if not question:
         "What kind of projects does Torch Technologies work on?"
     ]
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar='favicon-96x96.png'):
         starter_container = st.container()
         for q in starter_questions:
             if starter_container.button(q, on_click=set_question, args=(q,)):
@@ -215,7 +256,7 @@ if question:
     with st.chat_message("user"):
         st.markdown(question)
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar='favicon-96x96.png'):
         msg_placeholder = st.empty()
         full_response = ""
 
@@ -223,13 +264,10 @@ if question:
             [f"User: {msg['user']}\nAI: {msg['llm']}" for msg in st.session_state.chat_history[-3:]]
         )
 
-        # Collect full response
-        for chunk in query_llm(vector_store, question, history_context):
-            full_response += chunk
-            msg_placeholder.markdown(full_response + "▌")
-
+        full_response = get_cached_response(question, history_context)
         msg_placeholder.markdown(full_response)
 
+    if use_tts:
         final_audio_bytes = kokoro_generate(full_response)
         b64_audio = base64.b64encode(final_audio_bytes).decode('utf-8')
 
@@ -250,7 +288,7 @@ if question:
     # Suggest follow-up questions
     followup_questions = generate_questions(full_response)
     if followup_questions:
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar='favicon-96x96.png'):
             followup_container = st.container()
             for q in followup_questions:
                 if followup_container.button(q, on_click=set_question, args=(q,)):
