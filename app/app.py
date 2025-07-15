@@ -5,6 +5,7 @@ from langchain_chroma import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain_huggingface import HuggingFaceEmbeddings
 import streamlit as st
+from streamlit_mic_recorder import mic_recorder
 import os
 import re
 from faster_whisper import WhisperModel
@@ -119,7 +120,6 @@ def kokoro_generate(text, voice='af_heart'):
     all_audio = []
     for gs, ps, audio in generator:
         all_audio.append(audio)
-
     full_audio = np.concatenate(all_audio)
 
     wav_io = io.BytesIO()
@@ -179,26 +179,6 @@ def query_llm(vector_store, prompt, history_context):
         "chat_history": history_context,
     }):
         yield chunk.get("answer", "")
-
-
-def get_cached_response(question, history_context):
-    # Create a unique hash key for question + context
-    key = hashlib.sha256((question).encode()).hexdigest()
-
-    if "llm_cache" not in st.session_state:
-        st.session_state.llm_cache = {}
-
-    # Return cached if exists
-    if key in st.session_state.llm_cache:
-        return st.session_state.llm_cache[key]
-
-    # If not cached, run LLM and save result
-    response = ""
-    for chunk in query_llm(vector_store, question, history_context):
-        response += chunk
-
-    st.session_state.llm_cache[key] = response
-    return response
 
 ######################################
 
@@ -264,8 +244,25 @@ if question:
             [f"User: {msg['user']}\nAI: {msg['llm']}" for msg in st.session_state.chat_history[-3:]]
         )
 
-        full_response = get_cached_response(question, history_context)
-        msg_placeholder.markdown(full_response)
+        key = hashlib.sha256(question.encode()).hexdigest()
+        if "llm_cache" not in st.session_state:
+            st.session_state.llm_cache = {}
+
+        # Return cached if exists
+        if key in st.session_state.llm_cache:
+            full_response = st.session_state.llm_cache[key]
+            msg_placeholder.markdown(full_response)
+        else:
+            for chunk in query_llm(vector_store, question, history_context):
+                full_response += chunk
+                msg_placeholder.markdown(full_response)
+            st.session_state.llm_cache[key] = full_response
+
+    # Save to history
+    st.session_state.chat_history.append({
+        "user": question,
+        "llm": full_response,
+    })
 
     if use_tts:
         final_audio_bytes = kokoro_generate(full_response)
@@ -279,14 +276,18 @@ if question:
         """
         st.markdown(audio_html, unsafe_allow_html=True)
 
-    # Save to history
-    st.session_state.chat_history.append({
-        "user": question,
-        "llm": full_response,
-    })
-
     # Suggest follow-up questions
-    followup_questions = generate_questions(full_response)
+    followup_key = f"followup_{key}"
+
+    if "followup_cache" not in st.session_state:
+        st.session_state.followup_cache = {}
+
+    if followup_key in st.session_state.followup_cache:
+        followup_questions = st.session_state.followup_cache[followup_key]
+    else:
+        followup_questions = generate_questions(full_response)
+        st.session_state.followup_cache[followup_key] = followup_questions
+
     if followup_questions:
         with st.chat_message("assistant", avatar='favicon-96x96.png'):
             followup_container = st.container()
@@ -295,8 +296,10 @@ if question:
                     followup_container.empty()
                     break
 
-st.audio_input(
-    "Or record a voice question",
-    key="uploaded_audio",
-    on_change=transcribe_audio
-)
+# st.audio_input(
+#     "Or record a voice question",
+#     key="uploaded_audio",
+#     on_change=transcribe_audio
+# )
+
+mic_recorder(key='uploaded_audio', callback=transcribe_audio)

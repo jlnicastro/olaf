@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     tar \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies (including piper-tts)
+# Install Python dependencies
 COPY requirements.txt .
 RUN uv pip install -r requirements.txt --system
 

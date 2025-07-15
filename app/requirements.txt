@@ -1,4 +1,5 @@
 streamlit
+streamlit-mic-recorder
 chromadb
 langchain
 langchain-chroma
