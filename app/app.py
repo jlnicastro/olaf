@@ -83,7 +83,9 @@ def get_kokoro_pipeline():
 
 
 def transcribe_audio():
-    audio_bytes = st.session_state["uploaded_audio"].getvalue()
+    with st.sidebar:
+        st.json(st.session_state)
+    audio_bytes = st.session_state["uploaded_audio_output"]["bytes"]
     with NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
         temp_audio.write(audio_bytes)
         temp_audio.flush()
@@ -97,6 +99,10 @@ def transcribe_audio():
         transcription = " ".join([seg.text for seg in segments])
         st.session_state["audio_input"] = transcription
 
+    with st.sidebar:
+        st.json(st.session_state)
+
+    st.rerun()
 
 
 def kokoro_generate(text, voice='af_heart'):
@@ -180,12 +186,12 @@ def query_llm(vector_store, prompt, history_context):
     }):
         yield chunk.get("answer", "")
 
-######################################
+#################################################################################
 
 st.title("Torch Technologies Chatbot")
 
 st.sidebar.title("Settings")
-use_tts = st.sidebar.checkbox("Enable Kokoro TTS", value=True)
+use_tts = st.sidebar.checkbox("Enable Kokoro TTS", value=False)
 
 vector_store = get_vector_store()
 get_kokoro_pipeline()
@@ -302,4 +308,8 @@ if question:
 #     on_change=transcribe_audio
 # )
 
-mic_recorder(key='uploaded_audio', callback=transcribe_audio)
+mic_recorder(
+    key='uploaded_audio',
+    callback=transcribe_audio,
+    # start_prompt="Record a voice message",
+)
